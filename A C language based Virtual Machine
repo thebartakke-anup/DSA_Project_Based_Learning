@@ -1,1 +1,152 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <ctype.h>
 
+// --- 1. HARDWARE DEFINITIONS ---
+#define STACK_SIZE 256
+#define VAR_SIZE 26
+#define MAX_PROGRAM_SIZE 1024
+
+int stack[STACK_SIZE];      // The LIFO Stack (DSA Focus)
+int variables[VAR_SIZE];    // Memory for A-Z registers
+int sp = -1;                // Stack Pointer
+int pc = 0;                 // Program Counter
+bool running = true;
+
+typedef enum {
+    PSH, ADD, SUB, MUL, PRN, SET, LD, JMP, JZ, HLT, UNKNOWN
+} Opcode;
+
+// Helper to convert string labels to Opcodes (Replaces JS Assembler)
+Opcode string_to_opcode(char* s) {
+    if (strcmp(s, "PSH") == 0) return PSH;
+    if (strcmp(s, "ADD") == 0) return ADD;
+    if (strcmp(s, "SUB") == 0) return SUB;
+    if (strcmp(s, "MUL") == 0) return MUL;
+    if (strcmp(s, "PRN") == 0) return PRN;
+    if (strcmp(s, "SET") == 0) return SET;
+    if (strcmp(s, "LD") == 0) return LD;
+    if (strcmp(s, "JMP") == 0) return JMP;
+    if (strcmp(s, "JZ") == 0) return JZ;
+    if (strcmp(s, "HLT") == 0) return HLT;
+    return UNKNOWN;
+}
+
+// --- 2. THE VISUALIZER ---
+// This "nerfs" the project by making the internal DSA state visible
+void print_debug_state() {
+    printf("  [STACK]: ");
+    if (sp == -1) printf("empty");
+    for (int i = 0; i <= sp; i++) printf("%d ", stack[i]);
+    printf("\n  [VARS]:  ");
+    for (int i = 0; i < 5; i++) printf("%c:%d ", 'A' + i, variables[i]); // Show first 5
+    printf("...\n------------------------------------------\n");
+}
+
+// --- 3. THE EXECUTION ENGINE ---
+void run_vm(int* memory, int length) {
+    pc = 0;
+    sp = -1;
+    running = true;
+
+    printf("\n>>> BOOTING VM... EXECUTING BYTECODE <<<\n\n");
+
+    while (running && pc < length) {
+        int instr = memory[pc++];
+        
+        switch (instr) {
+            case PSH:
+                stack[++sp] = memory[pc++];
+                printf("OP: PUSH %d\n", stack[sp]);
+                break;
+            case ADD:
+                if (sp < 1) break;
+                printf("OP: ADD (%d + %d)\n", stack[sp-1], stack[sp]);
+                stack[sp-1] = stack[sp-1] + stack[sp];
+                sp--;
+                break;
+            case SUB:
+                if (sp < 1) break;
+                stack[sp-1] = stack[sp-1] - stack[sp];
+                sp--;
+                printf("OP: SUB\n");
+                break;
+            case MUL:
+                if (sp < 1) break;
+                stack[sp-1] = stack[sp-1] * stack[sp];
+                sp--;
+                printf("OP: MUL\n");
+                break;
+            case PRN:
+                printf(">> OUTPUT: %d\n", (sp >= 0) ? stack[sp] : -1);
+                break;
+            case SET: {
+                int reg = memory[pc++];
+                variables[reg] = stack[sp--];
+                printf("OP: SET Register %c\n", 'A' + reg);
+                break;
+            }
+            case LD: {
+                int reg = memory[pc++];
+                stack[++sp] = variables[reg];
+                printf("OP: LOAD Register %c\n", 'A' + reg);
+                break;
+            }
+            case HLT:
+                running = false;
+                printf("OP: HALT\n");
+                break;
+            default: break;
+        }
+        print_debug_state();
+    }
+}
+
+// --- 4. INTEGRATED ASSEMBLER ---
+// Directly parses a string into the memory array
+int assemble_and_load(const char* source, int* memory) {
+    char src[2048];
+    strcpy(src, source);
+    char* line = strtok(src, "\n");
+    int count = 0;
+
+    while (line != NULL) {
+        char op_str[10];
+        int val;
+        int items = sscanf(line, "%s %d", op_str, &val);
+        
+        if (items >= 1) {
+            Opcode op = string_to_opcode(op_str);
+            if (op != UNKNOWN) {
+                memory[count++] = op;
+                if (items == 2) memory[count++] = val;
+            }
+        }
+        line = strtok(NULL, "\n");
+    }
+    return count;
+}
+
+int main() {
+    int memory[MAX_PROGRAM_SIZE];
+
+    // Example Assembly Program (passed as a string)
+    // Computes: (10 * 5) + 20, stores in Reg A, prints it.
+    const char* my_code = 
+        "PSH 10\n"
+        "PSH 5\n"
+        "MUL\n"
+        "PSH 20\n"
+        "ADD\n"
+        "SET 0\n"
+        "LD 0\n"
+        "PRN\n"
+        "HLT";
+
+    int len = assemble_and_load(my_code, memory);
+    run_vm(memory, len);
+
+    return 0;
+}
